@@ -1,15 +1,17 @@
 const path = require('path');
 const { readInputFile } = require('../lib/read-file');
-const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
 
 let inputFilePath = path.join(__dirname, 'input2.txt');
 
 function processLines(inputLine) {
-  console.log(inputLine);
   const _list = inputLine[0].split(" ").filter(_ => _);
   const bigNumberList = _list.map(item => BigInt(item));
-
   return bigNumberList;
+}
+
+function isEvenLength(number) {
+  const length = number.toString().length;
+  return length % 2 === 0;
 }
 
 function blink(numbers, times) {
@@ -20,10 +22,11 @@ function blink(numbers, times) {
       const numberString = number.toString();
       if (number === 0n) {
         newNumbers.push(1n);
-      } else if (numberString.length % 2 === 0) {
+      } else if (isEvenLength(number)) {
         const half = numberString.length / 2;
         const left = numberString.slice(0, half);
         const right = numberString.slice(half);
+
         newNumbers.push(BigInt(left));
         newNumbers.push(BigInt(right));
       } else {
@@ -32,69 +35,68 @@ function blink(numbers, times) {
     }
     numbers = newNumbers;
   }
-  return numbers;
+  return numbers.length;
 }
 
-function runBlinkWorker(numbers, times) {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(__filename, {
-      workerData: { numbers, times }
-    });
+function blinkOptimized(numbers, times) {
+  let counts = new Map();
 
-    worker.on('message', resolve);
-    worker.on('error', reject);
-    worker.on('exit', code => {
-      if (code !== 0) {
-        reject(new Error(`Worker stopped with exit code ${code}`));
+  for (const number of numbers) {
+    const key = number.toString();
+    counts.set(key, (counts.get(key) || 0n) + 1n);
+  }
+
+  for (let i = 0; i < times; i++) {
+    const newCounts = new Map();
+
+    for (const [numStr, count] of counts) {
+      const number = BigInt(numStr);
+
+      if (number === 0n) {
+        const key = '1';
+        newCounts.set(key, (newCounts.get(key) || 0n) + count);
+      } else if (isEvenLength(number)) {
+        const numString = numStr;
+        const half = numString.length / 2;
+        const left = BigInt(numString.slice(0, half));
+        const right = BigInt(numString.slice(half));
+
+        const leftKey = left.toString();
+        const rightKey = right.toString();
+
+        newCounts.set(leftKey, (newCounts.get(leftKey) || 0n) + count);
+        newCounts.set(rightKey, (newCounts.get(rightKey) || 0n) + count);
+      } else {
+        const newNumber = number * 2024n;
+        const key = newNumber.toString();
+        newCounts.set(key, (newCounts.get(key) || 0n) + count);
       }
-    });
-  });
-}
+    }
 
-async function parallelBlink(numbers, times, numWorkers) {
-  const chunkSize = Math.ceil(numbers.length / numWorkers);
-  const promises = [];
-
-  for (let i = 0; i < numWorkers; i++) {
-    const chunk = numbers.slice(i * chunkSize, (i + 1) * chunkSize);
-    promises.push(runBlinkWorker(chunk, times));
+    counts = newCounts;
   }
 
-  const results = await Promise.all(promises);
-  return results.reduce((acc, val) => acc.concat(val), []);
-}
-
-async function parallelBlinkWithTimes(numbers, totalTimes, numWorkers) {
-  let currentNumbers = numbers;
-
-  for (let i = 0; i < totalTimes; i++) {
-    currentNumbers = await parallelBlink(currentNumbers, 1, numWorkers);
+  let totalCount = 0n;
+  for (const count of counts.values()) {
+    totalCount += count;
   }
 
-  return currentNumbers;
+  return totalCount;
 }
 
-if (isMainThread) {
-  async function main() {
-    const inputLines = readInputFile(inputFilePath);
-    const numbers = processLines(inputLines);
-    console.log(numbers);
+function main() {
+  const inputLines = readInputFile(inputFilePath);
+  const numbers = processLines(inputLines);
 
-    const numWorkers = 4; // Adjust based on your system's capabilities
-    let result = await parallelBlinkWithTimes(numbers, 25, numWorkers);
-    console.log(result.length);
+  console.log("Part 1: (Brute force) ");
+  const result1 = blink(numbers, 25);
+  console.log(result1.toString());
 
-    // Time start and end to calculate the time taken
-    const start = new Date();
-    result = await parallelBlinkWithTimes(numbers, 75, numWorkers);
-    const end = new Date();
-    console.log((end - start) / 1000 + " seconds");
-    console.log(result.length);
-  }
-
-  main().catch(err => console.error(err));
-} else {
-  const { numbers, times } = workerData;
-  const result = blink(numbers, times);
-  parentPort.postMessage(result);
+  console.log("\nPart 2:");
+  const start = Date.now();
+  const result2 = blinkOptimized(numbers, 75);
+  console.log(`Time: ${(Date.now() - start) / 1000}s`);
+  console.log(result2.toString());
 }
+
+main();
