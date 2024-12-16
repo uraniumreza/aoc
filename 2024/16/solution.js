@@ -1,11 +1,10 @@
 const path = require('path');
 const { readInputFile } = require('../lib/read-file');
 
-const inputFilePath = path.join(__dirname, 'input1.txt');
+const inputFilePath = path.join(__dirname, 'input2.txt');
 
 function findStart(map) {
   const r = map.length;
-
   return [r - 2, 1];
 }
 
@@ -15,7 +14,6 @@ function processLines(inputLines) {
     const _list = line.split("").filter(_ => _);
     list.push(_list);
   });
-
   return list;
 }
 
@@ -38,16 +36,29 @@ class PriorityQueue {
   }
 }
 
+function getUniquePathPositions(paths) {
+  const positions = new Set();
+  paths.forEach(pathInfo => {
+    pathInfo.path.forEach(step => {
+      const [x, y] = step.pos;
+      positions.add(`${x},${y}`);
+    });
+  });
+  return positions;
+}
+
 function traverseWithForwardPriority(map, x, y) {
   const queue = new PriorityQueue();
   const visited = new Map();
+  const allPaths = [];
+  let minCost = Infinity;
 
   queue.enqueue({
     pos: [x, y],
     direction: "<",
-    path: [{ pos: [x, y], direction: "^" }],
+    path: [{ pos: [x, y], direction: "<" }],
     cost: 0,
-    turns: 0
+    positions: new Set([`${x},${y}`])
   }, 0);
 
   const directions = {
@@ -73,11 +84,13 @@ function traverseWithForwardPriority(map, x, y) {
     ]
   };
 
+
   while (queue.values.length) {
-    const { element: { pos: [_x, _y], direction: dir, path, cost, turns } } = queue.dequeue();
+    const { element: { pos: [_x, _y], direction: dir, path, cost, positions } } = queue.dequeue();
     const currentKey = `${_x},${_y},${dir}`;
 
-    if (visited.has(currentKey) && visited.get(currentKey) <= cost) {
+    // Allow equal cost paths
+    if (visited.has(currentKey) && visited.get(currentKey) < cost) {
       continue;
     }
     visited.set(currentKey, cost);
@@ -86,45 +99,61 @@ function traverseWithForwardPriority(map, x, y) {
       const newX = _x + dx;
       const newY = _y + dy;
       const newKey = `${newX},${newY},${newDir}`;
-
       const turnCost = isTurn ? 1000 : 0;
       const moveCost = 1;
       const newCost = cost + turnCost + moveCost;
-      const newTurns = turns + (isTurn ? 1 : 0);
 
       if (map[newX][newY] === "E") {
-        console.log("Found exit at", visited.size);
-        return {
-          path: [...path, { pos: [newX, newY], direction: newDir }],
-          totalCost: newCost,
-          turns: newTurns
-        };
+        // Include paths with equal cost
+        if (newCost <= minCost) {
+          if (newCost < minCost) {
+            minCost = newCost;
+            allPaths.length = 0;
+          }
+          allPaths.push({
+            path: [...path, { pos: [newX, newY], direction: newDir }],
+            totalCost: newCost,
+            uniquePositions: Array.from(positions)
+          });
+        }
+        continue;
       }
 
+      // Allow equal cost paths to continue
       if (newX >= 0 && newX < map.length &&
           newY >= 0 && newY < map[0].length &&
           map[newX][newY] === "." &&
-          (!visited.has(newKey) || visited.get(newKey) > newCost)) {
+          (!visited.has(newKey) || visited.get(newKey) >= newCost)) {
+        const newPositions = new Set(positions);
+        newPositions.add(`${newX},${newY}`);
         queue.enqueue({
           pos: [newX, newY],
           direction: newDir,
           path: [...path, { pos: [newX, newY], direction: newDir }],
           cost: newCost,
-          turns: newTurns
+          positions: newPositions
         }, newCost);
       }
     }
   }
-  return null;
+
+  const pathPositions = getUniquePathPositions(allPaths);
+
+  return {
+    totalPaths: allPaths.length,
+    paths: allPaths,
+    allUniquePositions: pathPositions.size,
+    reachablePositions: pathPositions
+  };
 }
 
 function main() {
   const inputLines = readInputFile(inputFilePath);
   const map = processLines(inputLines);
   const [x, y] = findStart(map);
-  const shortestPath = traverseWithForwardPriority(map, x, y);
-  console.log("Shortest path:", shortestPath.path);
-  console.log("Total cost:", shortestPath.totalCost);
+
+  const pathInfo = traverseWithForwardPriority(map, x, y);
+  console.log(pathInfo.allUniquePositions);
 }
 
 main();
